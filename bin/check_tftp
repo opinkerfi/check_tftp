@@ -1,0 +1,154 @@
+#!/usr/bin/python
+
+# Copyright (C) 2012  Tomas Edwardsson
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+
+# Standard init
+import pynag.Plugins
+from tempfile import mkdtemp
+from pynag.Plugins import WARNING, CRITICAL, OK, UNKNOWN, simple as Plugin
+from subprocess import Popen, PIPE
+import os
+import time
+
+
+def mktmpdir():
+    """Returs path to newly create temporary directory"""
+
+    return mkdtemp(prefix="check_tftp_")
+
+def tftp_get(host, filename, dest=None, timeout=20):
+    """Fetches a ftp file to dest or into tmpdir"""
+    global np
+    global tmpdir
+
+    # Generate tmpdir if not stipulated
+    if dest is None:
+        dest = "%s/%s" % (tmpdir, os.path.basename(filename))
+        
+    # Execute tftp command
+    tftp = Popen(['tftp', str(host), '-m', 'binary', '-c', 'get', str(filename), str(dest)],
+        stdout=PIPE,
+        stderr=PIPE)
+
+    # How long to wait for exit of tftp command
+    timeout = time.time() + timeout
+
+    # Poll for exit of tftp process
+    while timeout > time.time():
+        ret = tftp.poll()
+        if ret is not None: break
+        time.sleep(1)
+
+    # Timeout, cleanup and add message
+    if ret is None:
+        try:
+            os.unlink(dest)
+        except:
+            pass
+        np.add_message(CRITICAL, "Timeout fetching tftp://%s/%s" % (host, filename))
+        return False
+
+    # Concat stdin and stderr in case of error
+    output = tftp.stderr.readline().strip() + " " + tftp.stdout.readline().strip()
+
+    if ret != 0:
+        np.add_message(UNKNOWN, "Unable to fetch tftp://%s/%s: %s" % (host, filename, output))
+        return False
+
+    # Dest was not created, check output of tftp
+    if os.path.exists(dest) is False:
+        np.add_message(UNKNOWN, "Unable to fetch tftp://%s/%s: %s" % (host, filename, output))
+        return False
+    # Dest was created, get size and remove
+    else:
+        size = os.stat(dest).st_size
+        os.unlink(dest)
+
+    # Size of file if 0, can't be good
+    if size < 1:
+        np.add_message(CRITICAL, "Unable to fetch tftp://%s/%s: %s" % (host, filename, output))
+        return False
+
+    return size
+
+
+def main():
+    global np
+    global tmpdir
+
+    # new pynag.Plugin
+    np = Plugin(must_threshold=False)
+
+    # Arguments
+    np.add_arg('m', 'minsize', 'Minumum size of file', required=False)
+    np.add_arg('f', 'file', 'Remote file, use often for many files', required=True, action='append')
+    np.add_arg('w', 'warning', 'Warn if tftp downloads take longer', required=False)
+    np.add_arg('c', 'critical', 'Critical if tftp downloads take longer', required=False)
+    np.add_arg('l', 'longoutput', 'Each file broken up into a new line for readability', required=False, action="store_true")
+
+    # Activate
+    np.activate()
+
+    # Minimyum size of fetched file
+    minsize = np['minsize'] or 1
+
+    if np['host'] == "":
+        np.nagios_exit(UNKNOWN, "Hostname is required")
+
+    tmpdir = mktmpdir()
+
+    end_time = time.time() + int(np['timeout'] or 20)
+
+    # Loop through the files
+    for file in np['file']:
+        file_start_time = time.time()
+        try:
+            size = tftp_get(np['host'], file, timeout=(end_time - time.time()))
+            file_end_time = time.time()
+            run_time = time.time() - file_start_time
+            if size is not False:
+                if np['critical'] and run_time >= int(np['critical']):
+                    stat = CRITICAL
+                elif np['warning'] and run_time >= int(np['warning']):
+                    stat = WARNING
+                else:
+                    stat = OK
+                np.add_message(stat, "tftp://%s/%s got %iB in %.2f secs" % 
+                    ( np['host'], file, 
+                    size, (file_end_time - file_start_time)))
+                np.add_perfdata("%s_size" % (file), size)
+                np.add_perfdata("%s_fetch" % (file), 
+                    (file_end_time - file_start_time))
+                
+        except Exception, e:
+            np.nagios_exit(UNKNOWN, e)
+
+
+    # Check and return
+    (ret, output) = np.check_messages(joinallstr=(np['longoutput'] and "\n" or " "))
+    os.rmdir(tmpdir)
+    np.nagios_exit(ret, output)
+    
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception, e:
+        np.nagios_exit(UNKNOWN, "Exception: %s" % (e))
+
+# vim: ts=4 sts=4 expandtab shiftwidth=4 smarttab autoindent
