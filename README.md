@@ -9,7 +9,7 @@ Usage: check_tftp [options]
 
 Options:
   -h, --help            show this help message and exit
-  -f FILE, --file=FILE  Remote file, use often for many files
+  -f FILE, --file=FILE  Remote file, space seperate multiple files
   -w WARNING, --warning=WARNING
                         Warn if tftp downloads take longer
   -c CRITICAL, --critical=CRITICAL
@@ -28,9 +28,7 @@ Demo Run
 --------
 ```
 $ check_tftp -H tftp.example.com \
-        -f linux-install/pxelinux.0 \
-        -f linux-install/vesamenu.c32 \
-        -f linux-install/logo.png \
+        -f "linux-install/pxelinux.0 linux-install/vesamenu.c32 linux-install/logo.png" \
         -l
 OK: tftp://tftp.example.com/linux-install/pxelinux.0 got 89418B in 1.00 secs
 tftp://tftp.example.com/linux-install/vesamenu.c32 got 155792B in 1.00 secs

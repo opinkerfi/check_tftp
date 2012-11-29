@@ -85,7 +85,7 @@ def main():
     np = Plugin(must_threshold=False)
 
     # Arguments
-    np.add_arg('f', 'file', 'Remote file, use often for many files', required=True, action='append')
+    np.add_arg('f', 'file', 'Remote file, space seperate multiple files', required=True)
     np.add_arg('w', 'warning', 'Warn if tftp downloads take longer', required=False)
     np.add_arg('c', 'critical', 'Critical if tftp downloads take longer', required=False)
     np.add_arg('l', 'longoutput', 'Each file broken up into a new line for readability', required=False, action="store_true")
@@ -100,8 +100,10 @@ def main():
 
     end_time = time.time() + int(np['timeout'] or 20)
 
+    files = np['file'].split()
+
     # Loop through the files
-    for file in np['file']:
+    for file in files:
         file_start_time = time.time()
         try:
             size = tftp_get(np['host'], file, timeout=(end_time - time.time()))
