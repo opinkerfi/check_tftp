@@ -9,8 +9,6 @@ Usage: check_tftp [options]
 
 Options:
   -h, --help            show this help message and exit
-  -m MINSIZE, --minsize=MINSIZE
-                        Minumum size of file
   -f FILE, --file=FILE  Remote file, use often for many files
   -w WARNING, --warning=WARNING
                         Warn if tftp downloads take longer
@@ -22,5 +20,4 @@ Options:
   -H HOST, --host=HOST  Target Host
   -t TIMEOUT, --timeout=TIMEOUT
                         Connection Timeout
-
 ```

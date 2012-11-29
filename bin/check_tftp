@@ -49,43 +49,33 @@ def tftp_get(host, filename, dest=None, timeout=20):
     timeout = time.time() + timeout
 
     # Poll for exit of tftp process
+    ret = None
     while timeout > time.time():
         ret = tftp.poll()
         if ret is not None: break
         time.sleep(1)
 
+    # Get size and throw away file
+    try:
+        size = os.stat(dest).st_size
+        os.unlink(dest)
+    except Exception:
+        pass
+
     # Timeout, cleanup and add message
     if ret is None:
-        try:
-            os.unlink(dest)
-        except:
-            pass
         np.add_message(CRITICAL, "Timeout fetching tftp://%s/%s" % (host, filename))
         return False
 
     # Concat stdin and stderr in case of error
     output = tftp.stderr.readline().strip() + " " + tftp.stdout.readline().strip()
 
-    if ret != 0:
-        np.add_message(UNKNOWN, "Unable to fetch tftp://%s/%s: %s" % (host, filename, output))
-        return False
-
-    # Dest was not created, check output of tftp
-    if os.path.exists(dest) is False:
-        np.add_message(UNKNOWN, "Unable to fetch tftp://%s/%s: %s" % (host, filename, output))
-        return False
-    # Dest was created, get size and remove
-    else:
-        size = os.stat(dest).st_size
-        os.unlink(dest)
-
-    # Size of file if 0, can't be good
-    if size < 1:
-        np.add_message(CRITICAL, "Unable to fetch tftp://%s/%s: %s" % (host, filename, output))
+    # Bad tftp exit code, dest was not created or size is off
+    if ret != 0 or not size:
+        np.add_message(CRITICAL, "Unable to fetch tftp://%s/%s [rc=%i]: %s" % (host, filename, ret, output))
         return False
 
     return size
-
 
 def main():
     global np
@@ -95,7 +85,6 @@ def main():
     np = Plugin(must_threshold=False)
 
     # Arguments
-    np.add_arg('m', 'minsize', 'Minumum size of file', required=False)
     np.add_arg('f', 'file', 'Remote file, use often for many files', required=True, action='append')
     np.add_arg('w', 'warning', 'Warn if tftp downloads take longer', required=False)
     np.add_arg('c', 'critical', 'Critical if tftp downloads take longer', required=False)
@@ -103,9 +92,6 @@ def main():
 
     # Activate
     np.activate()
-
-    # Minimyum size of fetched file
-    minsize = np['minsize'] or 1
 
     if np['host'] == "":
         np.nagios_exit(UNKNOWN, "Hostname is required")
@@ -121,6 +107,7 @@ def main():
             size = tftp_get(np['host'], file, timeout=(end_time - time.time()))
             file_end_time = time.time()
             run_time = time.time() - file_start_time
+
             if size is not False:
                 if np['critical'] and run_time >= int(np['critical']):
                     stat = CRITICAL
